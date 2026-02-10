@@ -1,0 +1,458 @@
+/* ================================
+   FOTO RAMÍREZ · Mobile First CSS
+   Fixes:
+   - Sin scroll horizontal (ID largo / badges / items)
+   - Botones y bottom bar siempre dentro en Android
+   - Acciones (Editar/Eliminar) responsivas
+   - Inputs 16px para evitar zoom Android
+   - Theme base oscuro global (sin romper colores internos)
+   ================================ */
+
+/* ✅ Box sizing global (clave anti-overflow) */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ✅ Root sizing */
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ✅ Anti-overflow global */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* ===== Theme global oscuro (Foto Ramírez) =====
+   Nota: solo fija el fondo y color base. Tus componentes
+   pueden seguir manejando colores dentro del App.js / inline.
+*/
+body {
+  margin: 0;
+  background: #0b0f14;
+  color: #ffffff;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  /* Mejor scroll en móvil */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Evita que botones hereden fuentes raras */
+button {
+  font-family: inherit;
+}
+
+/* Opcional: links en oscuro */
+a {
+  color: inherit;
+}
+
+/* ================================
+   Base
+   ================================ */
+
+/* OJO: antes estaba center; eso hace que listas/detalle se vean raros.
+   Lo dejamos más natural. Si quieres centrar solo títulos, dime y lo ajusto. */
+.App {
+  font-family: sans-serif;
+  text-align: left;
+}
+
+/* ✅ Contenedores: nunca empujar ancho */
+.wrap,
+.card,
+.item,
+.row,
+.kpiRow,
+.bottomBar,
+.bottomInner {
+  max-width: 100%;
+}
+
+/* ✅ Evita que el wrap/card/item generen scroll lateral */
+.wrap,
+.card,
+.item,
+.row,
+.kpiRow {
+  overflow-x: hidden;
+}
+
+/* ✅ Elementos interactivos: nunca más anchos que el contenedor */
+.input,
+select,
+.btn {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* ✅ Importantísimo en flex: si no, el texto largo empuja el ancho */
+.itemTop > div,
+.bottomInner > button {
+  min-width: 0;
+}
+
+/* ✅ Texto largo (ID, especificaciones, etc.) NO debe empujar */
+.itemTitle,
+.itemSub,
+.badge {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Opcional: título máximo 2 líneas para que se vea limpio */
+.itemTitle {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ================================
+   FIXES ESPECÍFICOS (Carrito + Bottom)
+   ================================ */
+
+/* ✅ Si en desktop quieres 2 botones en fila, pero en móvil no se rompa */
+.itemActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.itemActions .btn {
+  flex: 1 1 140px; /* se acomoda en 1 o 2 columnas según espacio */
+  min-width: 0;
+}
+
+/* ✅ BottomBar siempre contenida y sin overflow */
+.bottomBar {
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+
+  /* ✅ Safe-area Android/iPhone (no estorba, no se “pierde”) */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+/* ✅ Badge nowrap opcional */
+.badgeNowrap {
+  white-space: nowrap;
+}
+
+/* ✅ Por defecto badge permite romper texto largo (evita scroll horizontal por ID) */
+.badge {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ================================
+   MOBILE (ANDROID) PRIORITY
+   ================================ */
+@media (max-width: 560px) {
+  /* Root padding cómodo */
+  .appRoot,
+  .mRoot {
+    padding: 14px 10px;
+  }
+
+  /* Grids a 1 columna */
+  .grid,
+  .fourCol,
+  .twoCol {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+
+  /* Cards compactas */
+  .card {
+    border-radius: 16px;
+  }
+
+  .cardHead,
+  .cardBody {
+    padding: 12px;
+  }
+
+  /* Inputs/Selects: 16px para que Android no haga zoom */
+  .input,
+  select {
+    padding: 14px 12px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+
+  /* Botones full width */
+  .btn {
+    width: 100%;
+    padding: 14px 14px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+
+  /* Stepper más “tap friendly” */
+  .stepper {
+    gap: 8px;
+  }
+
+  .step {
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .stepArrow {
+    display: none;
+  }
+
+  /* Carrito: línea a columna para que no se encime */
+  .line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .lineRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .lineMoney {
+    font-size: 16px;
+  }
+
+  /* Topbar apilada */
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .brand {
+    width: 100%;
+  }
+
+  /* ✅ Bottom bar: SIEMPRE 1 columna en móvil (evita recorte) */
+  .bottomInner {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
+
+  /* ✅ Acciones de item (Editar/Eliminar) en columna */
+  .itemActions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .itemActions .btn {
+    width: 100%;
+  }
+}
+
+/* ================================
+   EXTRA: viewport height estable (móvil)
+   ================================ */
+/* Si usas contenedores full-height, esto ayuda en Chrome móvil */
+.fullHeight {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+/* ================================
+   P3 · GOLD THEME (como la imagen)
+   ================================ */
+
+.p3Page {
+  min-height: 100vh;
+  padding: 18px 14px;
+  background: radial-gradient(
+      1200px 600px at 50% 20%,
+      rgba(255, 200, 120, 0.1),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at 50% 90%,
+      rgba(255, 200, 120, 0.07),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #0a0c0f 0%, #06070a 100%);
+  color: #f7f2e8;
+}
+
+.p3Shell {
+  max-width: 980px;
+  margin: 0 auto;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 210, 140, 0.15);
+  background: rgba(10, 12, 15, 0.55);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+/* topbar */
+.p3Topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px;
+  border-bottom: 1px solid rgba(255, 210, 140, 0.12);
+  background: radial-gradient(
+      800px 120px at 50% 0%,
+      rgba(255, 215, 140, 0.2),
+      transparent 70%
+    ),
+    linear-gradient(180deg, rgba(18, 14, 10, 0.7), rgba(10, 10, 12, 0.55));
+}
+
+.p3Title {
+  font-weight: 900;
+  font-size: 26px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #f5e8cf;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.p3Btn {
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 210, 140, 0.22);
+  background: radial-gradient(
+      140px 60px at 50% 0%,
+      rgba(255, 230, 170, 0.18),
+      transparent 60%
+    ),
+    linear-gradient(180deg, rgba(35, 28, 18, 0.75), rgba(14, 12, 10, 0.55));
+  color: #f7f2e8;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 215, 140, 0.08);
+}
+
+.p3Btn:active {
+  transform: translateY(1px);
+}
+
+.p3Hint {
+  padding: 14px 16px 18px;
+  font-size: 13px;
+  opacity: 0.85;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.p3Card {
+  margin: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 210, 140, 0.14);
+  background: radial-gradient(
+      1200px 300px at 50% 0%,
+      rgba(255, 215, 140, 0.12),
+      transparent 60%
+    ),
+    linear-gradient(180deg, rgba(20, 16, 12, 0.55), rgba(10, 10, 12, 0.45));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 215, 140, 0.06);
+}
+
+/* items (Urgente/Hoy/General) */
+.p3Item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 210, 140, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.p3Item + .p3Item {
+  margin-top: 14px;
+}
+
+.p3ItemLeft {
+  min-width: 0;
+}
+.p3ItemTitle {
+  font-size: 20px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.p3ItemSub {
+  margin-top: 6px;
+  opacity: 0.78;
+  font-weight: 700;
+}
+
+.p3Dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  box-shadow: 0 0 18px rgba(255, 215, 140, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.p3Count {
+  min-width: 76px;
+  height: 48px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 900;
+  color: #f7f2e8;
+  border: 1px solid rgba(255, 220, 150, 0.3);
+  background: radial-gradient(
+      160px 60px at 50% 10%,
+      rgba(255, 235, 180, 0.14),
+      transparent 60%
+    ),
+    linear-gradient(180deg, rgba(10, 40, 25, 0.55), rgba(8, 18, 12, 0.55));
+  box-shadow: inset 0 0 0 1px rgba(255, 215, 140, 0.08);
+}
+
+/* colors */
+.p3Urgente .p3Dot {
+  background: #d14c4c;
+}
+.p3Hoy .p3Dot {
+  background: #d6b14c;
+}
+.p3General .p3Dot {
+  background: #a58ad6;
+}
+
+/* responsive */
+@media (max-width: 560px) {
+  .p3Title {
+    font-size: 20px;
+  }
+  .p3Card {
+    margin: 12px;
+    padding: 14px;
+  }
+  .p3Item {
+    padding: 14px;
+  }
+  .p3Count {
+    min-width: 64px;
+    height: 44px;
+    font-size: 22px;
+  }
+}
