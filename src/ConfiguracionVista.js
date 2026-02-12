@@ -284,6 +284,21 @@ export default function ConfiguracionVista({ session, onBack }) {
     </div>
   );
 
+  // ✅ NUEVO: Label arriba de inputs (para que se vean los nombres)
+  const FieldLabel = ({ children }) => (
+    <div
+      style={{
+        fontSize: 12,
+        fontWeight: 900,
+        opacity: 0.85,
+        marginBottom: 6,
+        letterSpacing: 0.4,
+      }}
+    >
+      {children}
+    </div>
+  );
+
   // ====== Render ======
   if (tab === "home") {
     return (
@@ -410,7 +425,7 @@ export default function ConfiguracionVista({ session, onBack }) {
     );
   }
 
-  /* Lo demás igual (precios / agregar) */
+  /* ✅ SOLO CAMBIO AQUÍ: labels arriba de los inputs en "precios" */
   if (tab === "precios") {
     return (
       <div style={{ padding: 12 }}>
@@ -452,23 +467,30 @@ export default function ConfiguracionVista({ session, onBack }) {
                       gap: 10,
                     }}
                   >
-                    <input
-                      value={r.tamano || ""}
-                      onChange={(e) =>
-                        patchPrecio(r.id, { tamano: e.target.value })
-                      }
-                      placeholder="Tamaño"
-                      style={{ padding: 12, borderRadius: 12 }}
-                    />
-                    <input
-                      value={r.cantidad ?? 1}
-                      onChange={(e) =>
-                        patchPrecio(r.id, { cantidad: e.target.value })
-                      }
-                      inputMode="numeric"
-                      placeholder="Cantidad"
-                      style={{ padding: 12, borderRadius: 12 }}
-                    />
+                    <div>
+                      <FieldLabel>TAMAÑO</FieldLabel>
+                      <input
+                        value={r.tamano || ""}
+                        onChange={(e) =>
+                          patchPrecio(r.id, { tamano: e.target.value })
+                        }
+                        placeholder="Tamaño"
+                        style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>CANTIDAD</FieldLabel>
+                      <input
+                        value={r.cantidad ?? 1}
+                        onChange={(e) =>
+                          patchPrecio(r.id, { cantidad: e.target.value })
+                        }
+                        inputMode="numeric"
+                        placeholder="Cantidad"
+                        style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                      />
+                    </div>
                   </div>
 
                   <div
@@ -478,33 +500,44 @@ export default function ConfiguracionVista({ session, onBack }) {
                       gap: 10,
                     }}
                   >
-                    <input
-                      value={r.precio_base ?? 0}
-                      onChange={(e) =>
-                        patchPrecio(r.id, { precio_base: e.target.value })
-                      }
-                      inputMode="decimal"
-                      placeholder="Precio base"
-                      style={{ padding: 12, borderRadius: 12 }}
-                    />
-                    <input
-                      value={r.aumento_urgente ?? 0}
-                      onChange={(e) =>
-                        patchPrecio(r.id, { aumento_urgente: e.target.value })
-                      }
-                      inputMode="decimal"
-                      placeholder="Aumento urgente"
-                      style={{ padding: 12, borderRadius: 12 }}
-                    />
-                    <input
-                      value={r.aumento_kenfor ?? 0}
-                      onChange={(e) =>
-                        patchPrecio(r.id, { aumento_kenfor: e.target.value })
-                      }
-                      inputMode="decimal"
-                      placeholder="Aumento Kenfor"
-                      style={{ padding: 12, borderRadius: 12 }}
-                    />
+                    <div>
+                      <FieldLabel>PRECIO BASE</FieldLabel>
+                      <input
+                        value={r.precio_base ?? 0}
+                        onChange={(e) =>
+                          patchPrecio(r.id, { precio_base: e.target.value })
+                        }
+                        inputMode="decimal"
+                        placeholder="Precio base"
+                        style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>URGENTE</FieldLabel>
+                      <input
+                        value={r.aumento_urgente ?? 0}
+                        onChange={(e) =>
+                          patchPrecio(r.id, { aumento_urgente: e.target.value })
+                        }
+                        inputMode="decimal"
+                        placeholder="Aumento urgente"
+                        style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>KENFOR</FieldLabel>
+                      <input
+                        value={r.aumento_kenfor ?? 0}
+                        onChange={(e) =>
+                          patchPrecio(r.id, { aumento_kenfor: e.target.value })
+                        }
+                        inputMode="decimal"
+                        placeholder="Aumento Kenfor"
+                        style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                      />
+                    </div>
                   </div>
 
                   <div
