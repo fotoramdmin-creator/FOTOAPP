@@ -16,10 +16,8 @@ import {
 } from "react-icons/fi";
 
 export default function Menu({ setVista, session }) {
-  // ✅ Respeta tu regla actual: admin viene como session.admin === true
   const isAdmin = session?.admin === true;
 
-  // ====== BADGES (pendientes) ======
   const [ordenCount, setOrdenCount] = useState(0);
   const [loadingBadges, setLoadingBadges] = useState(false);
   const lastErrRef = useRef("");
@@ -27,7 +25,6 @@ export default function Menu({ setVista, session }) {
   const fetchBadges = async () => {
     setLoadingBadges(true);
     try {
-      // P2: pedidos que le tocan al fotógrafo (tu vista)
       const { count: cOrden, error: eOrden } = await supabase
         .from("orden_en_curso_fotografo_resumen")
         .select("*", { count: "exact", head: true });
@@ -37,7 +34,6 @@ export default function Menu({ setVista, session }) {
       setOrdenCount(cOrden ?? 0);
       lastErrRef.current = "";
     } catch (e) {
-      // no rompas el menú si falla
       const msg = e?.message || String(e);
       if (msg !== lastErrRef.current) console.error("Menu badges error:", e);
       lastErrRef.current = msg;
@@ -71,13 +67,13 @@ export default function Menu({ setVista, session }) {
     },
     { key: "p3", title: "Producción", icon: <FiMonitor /> },
     { key: "entrega", title: "Entrega", icon: <FiTruck /> },
-    { key: "servicios", title: "Servicios", icon: <FiCalendar /> },
-    { key: "busqueda", title: "Búsqueda", icon: <FiSearch /> },
 
-    // ✅ NUEVO: ARCHIVO (guía de carpetas)
+    // ✅ CAMBIO AQUÍ
+    { key: "servicios", title: "Calendario", icon: <FiCalendar /> },
+
+    { key: "busqueda", title: "Búsqueda", icon: <FiSearch /> },
     { key: "archivo", title: "Archivo", icon: <FiArchive /> },
 
-    // 🔐 SOLO ADMIN
     ...(isAdmin
       ? [
           { key: "cuentas", title: "Cuentas", icon: <FiDollarSign /> },
@@ -86,7 +82,6 @@ export default function Menu({ setVista, session }) {
         ]
       : []),
 
-    // 🔴 Cerrar sesión (SIEMPRE visible)
     { key: "__logout__", title: "Cerrar sesión", icon: <FiLogOut /> },
   ];
 
@@ -219,7 +214,6 @@ export default function Menu({ setVista, session }) {
                 position: "relative",
               }}
             >
-              {/* ✅ BADGE (solo donde aplique) */}
               {it.key === "orden" && (
                 <Badge value={it.badge} loading={it.badgeLoading} />
               )}
