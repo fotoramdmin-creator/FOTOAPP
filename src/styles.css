@@ -456,3 +456,10 @@ select,
     font-size: 22px;
   }
 }
+.label {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #cfcfcf;
+  letter-spacing: 0.5px;
+}
