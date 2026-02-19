@@ -18,26 +18,104 @@ import {
 export default function Menu({ setVista, session }) {
   const isAdmin = session?.admin === true;
 
+  // ====== BADGES ======
   const [ordenCount, setOrdenCount] = useState(0);
+
+  // Producción: ⚡ urgentes + 🕒 hoy
+  const [p3UrgCount, setP3UrgCount] = useState(0);
+  const [p3HoyCount, setP3HoyCount] = useState(0);
+
   const [loadingBadges, setLoadingBadges] = useState(false);
   const lastErrRef = useRef("");
+
+  // helpers: detectar campos sin romper
+  const pick = (obj, keys) => {
+    for (const k of keys) {
+      if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
+    }
+    return undefined;
+  };
+
+  const asNum = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const asCat = (v) =>
+    String(v || "")
+      .toUpperCase()
+      .trim();
 
   const fetchBadges = async () => {
     setLoadingBadges(true);
     try {
+      // 1) P2: Orden en curso (fotógrafo)
       const { count: cOrden, error: eOrden } = await supabase
         .from("orden_en_curso_fotografo_resumen")
         .select("*", { count: "exact", head: true });
 
       if (eOrden) throw eOrden;
 
+      // 2) P3: PRODUCCIÓN
+      // Usamos produccion_resumen porque ES lo que ya tienes (dashboard).
+      // Pero lo leemos "agnóstico" a columnas para no fallar.
+      const { data: p3Rows, error: eP3 } = await supabase
+        .from("produccion_resumen")
+        .select("*")
+        .limit(200);
+
+      if (eP3) throw eP3;
+
+      let urg = 0;
+      let hoy = 0;
+
+      for (const r of p3Rows || []) {
+        const cat = asCat(
+          pick(r, ["categoria", "cat", "grupo", "tipo", "bucket", "estado"])
+        );
+
+        const total = asNum(
+          pick(r, ["total", "count", "cantidad", "n", "pendientes"])
+        );
+
+        // Si tu resumen viene por filas tipo:
+        // { categoria: 'URGENTE', total: 1 }
+        // { categoria: 'HOY', total: 1 }
+        if (cat === "URGENTE") urg += total;
+        if (cat === "HOY") hoy += total;
+
+        // Si tu resumen NO viene así y trae flags por registro:
+        // sumamos 1 por fila (fallback)
+        if (total === 0) {
+          const isUrg =
+            r?.urgente === true ||
+            asCat(pick(r, ["prioridad"])) === "URGENTE" ||
+            asCat(pick(r, ["categoria"])) === "URGENTE";
+
+          const isHoy =
+            r?.hoy === true ||
+            r?.para_hoy === true ||
+            asCat(pick(r, ["categoria"])) === "HOY";
+
+          if (isUrg) urg += 1;
+          if (isHoy) hoy += 1;
+        }
+      }
+
       setOrdenCount(cOrden ?? 0);
+      setP3UrgCount(urg);
+      setP3HoyCount(hoy);
+
       lastErrRef.current = "";
     } catch (e) {
       const msg = e?.message || String(e);
       if (msg !== lastErrRef.current) console.error("Menu badges error:", e);
       lastErrRef.current = msg;
+
+      // NO rompas la UI
       setOrdenCount(0);
+      setP3UrgCount(0);
+      setP3HoyCount(0);
     } finally {
       setLoadingBadges(false);
     }
@@ -65,12 +143,16 @@ export default function Menu({ setVista, session }) {
       badge: ordenCount,
       badgeLoading: loadingBadges,
     },
-    { key: "p3", title: "Producción", icon: <FiMonitor /> },
+    {
+      key: "p3",
+      title: "Producción",
+      icon: <FiMonitor />,
+      urg: p3UrgCount,
+      hoy: p3HoyCount,
+      badgeLoading: loadingBadges,
+    },
     { key: "entrega", title: "Entrega", icon: <FiTruck /> },
-
-    // ✅ CAMBIO AQUÍ
-    { key: "servicios", title: "Calendario", icon: <FiCalendar /> },
-
+    { key: "servicios", title: "Servicios", icon: <FiCalendar /> },
     { key: "busqueda", title: "Búsqueda", icon: <FiSearch /> },
     { key: "archivo", title: "Archivo", icon: <FiArchive /> },
 
@@ -109,7 +191,6 @@ export default function Menu({ setVista, session }) {
         </div>
       );
     }
-
     if (!n) return null;
 
     return (
@@ -136,6 +217,94 @@ export default function Menu({ setVista, session }) {
         title={`Pendientes: ${n}`}
       >
         {n}
+      </div>
+    );
+  };
+
+  const BadgeP3 = ({ urg, hoy, loading }) => {
+    const u = Number(urg || 0);
+    const h = Number(hoy || 0);
+
+    if (loading) {
+      return (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            padding: "6px 10px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 950,
+            letterSpacing: 0.5,
+            border: "1px solid rgba(39,224,214,0.45)",
+            background: "rgba(0,0,0,0.35)",
+            color: "#fff7e6",
+          }}
+          title="Cargando pendientes…"
+        >
+          …
+        </div>
+      );
+    }
+
+    if (!u && !h) return null;
+
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          display: "flex",
+          gap: 8,
+        }}
+      >
+        {u ? (
+          <div
+            style={{
+              minWidth: 36,
+              height: 28,
+              padding: "0 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 950,
+              border: "1px solid rgba(255,90,90,0.55)",
+              background: "rgba(0,0,0,0.35)",
+              color: "#fff7e6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 10px 22px rgba(0,0,0,0.28)",
+            }}
+            title={`URGENTE: ${u}`}
+          >
+            ⚡ {u}
+          </div>
+        ) : null}
+
+        {h ? (
+          <div
+            style={{
+              minWidth: 36,
+              height: 28,
+              padding: "0 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 950,
+              border: "1px solid rgba(212,175,55,0.55)",
+              background: "rgba(0,0,0,0.35)",
+              color: "#fff7e6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 10px 22px rgba(0,0,0,0.28)",
+            }}
+            title={`PARA HOY: ${h}`}
+          >
+            🕒 {h}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -179,13 +348,7 @@ export default function Menu({ setVista, session }) {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 14,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         {items.map((it) => {
           const isLogout = it.key === "__logout__";
           const isRetiros = it.key === "retiro";
@@ -216,6 +379,10 @@ export default function Menu({ setVista, session }) {
             >
               {it.key === "orden" && (
                 <Badge value={it.badge} loading={it.badgeLoading} />
+              )}
+
+              {it.key === "p3" && (
+                <BadgeP3 urg={it.urg} hoy={it.hoy} loading={it.badgeLoading} />
               )}
 
               <div
