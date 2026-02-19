@@ -15,33 +15,97 @@ import {
   FiArchive,
 } from "react-icons/fi";
 
+const pad2 = (n) => String(n).padStart(2, "0");
+const ymdLocal = (d = new Date()) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
 export default function Menu({ setVista, session }) {
   // ✅ Respeta tu regla actual: admin viene como session.admin === true
   const isAdmin = session?.admin === true;
 
-  // ====== BADGES (pendientes) ======
+  // ====== BADGES ======
   const [ordenCount, setOrdenCount] = useState(0);
+
+  // Producción: ⚡ urgentes + 🕒 hoy
+  const [p3UrgCount, setP3UrgCount] = useState(0);
+  const [p3HoyCount, setP3HoyCount] = useState(0);
+
   const [loadingBadges, setLoadingBadges] = useState(false);
   const lastErrRef = useRef("");
 
   const fetchBadges = async () => {
     setLoadingBadges(true);
     try {
-      // P2: pedidos que le tocan al fotógrafo (tu vista)
+      // 1) P2: pedidos que le tocan al fotógrafo
       const { count: cOrden, error: eOrden } = await supabase
         .from("orden_en_curso_fotografo_resumen")
         .select("*", { count: "exact", head: true });
 
       if (eOrden) throw eOrden;
 
+      // 2) P3: usar la MISMA idea del dashboard:
+      // leer produccion_resumen y contar en JS (robusto a nombres de columnas)
+      const { data: p3Rows, error: eP3 } = await supabase
+        .from("produccion_resumen")
+        .select("*")
+        .limit(1000);
+
+      if (eP3) throw eP3;
+
+      const today = ymdLocal(new Date());
+
+      let urg = 0;
+      let hoy = 0;
+
+      for (const r of p3Rows || []) {
+        // ---------- URGENTE ----------
+        const isUrg =
+          r?.urgente === true ||
+          r?.is_urgente === true ||
+          r?.prioridad === "URGENTE" ||
+          r?.categoria === "URGENTE";
+
+        if (isUrg) urg += 1;
+
+        // ---------- HOY ----------
+        // 1) flags directos si existen
+        const isHoyFlag =
+          r?.hoy === true || r?.para_hoy === true || r?.entrega_hoy === true;
+
+        // 2) si hay fecha_entrega, comparar yyyy-mm-dd local
+        let isHoyByDate = false;
+        const fe =
+          r?.fecha_entrega ||
+          r?.fecha_entrega_local ||
+          r?.entrega_fecha ||
+          r?.fecha;
+
+        if (fe) {
+          // soporta Date, ISO o "YYYY-MM-DD"
+          const s = String(fe).slice(0, 10);
+          if (s === today) isHoyByDate = true;
+        }
+
+        // 3) si trae categoria ya clasificada
+        const isHoyByCategoria = r?.categoria === "HOY";
+
+        if (isHoyFlag || isHoyByDate || isHoyByCategoria) hoy += 1;
+      }
+
       setOrdenCount(cOrden ?? 0);
+      setP3UrgCount(urg);
+      setP3HoyCount(hoy);
+
       lastErrRef.current = "";
     } catch (e) {
       // no rompas el menú si falla
       const msg = e?.message || String(e);
       if (msg !== lastErrRef.current) console.error("Menu badges error:", e);
       lastErrRef.current = msg;
+
       setOrdenCount(0);
+      setP3UrgCount(0);
+      setP3HoyCount(0);
     } finally {
       setLoadingBadges(false);
     }
@@ -69,15 +133,19 @@ export default function Menu({ setVista, session }) {
       badge: ordenCount,
       badgeLoading: loadingBadges,
     },
-    { key: "p3", title: "Producción", icon: <FiMonitor /> },
+    {
+      key: "p3",
+      title: "Producción",
+      icon: <FiMonitor />,
+      urg: p3UrgCount,
+      hoy: p3HoyCount,
+      badgeLoading: loadingBadges,
+    },
     { key: "entrega", title: "Entrega", icon: <FiTruck /> },
     { key: "servicios", title: "Servicios", icon: <FiCalendar /> },
     { key: "busqueda", title: "Búsqueda", icon: <FiSearch /> },
-
-    // ✅ NUEVO: ARCHIVO (guía de carpetas)
     { key: "archivo", title: "Archivo", icon: <FiArchive /> },
 
-    // 🔐 SOLO ADMIN
     ...(isAdmin
       ? [
           { key: "cuentas", title: "Cuentas", icon: <FiDollarSign /> },
@@ -86,7 +154,6 @@ export default function Menu({ setVista, session }) {
         ]
       : []),
 
-    // 🔴 Cerrar sesión (SIEMPRE visible)
     { key: "__logout__", title: "Cerrar sesión", icon: <FiLogOut /> },
   ];
 
@@ -114,7 +181,6 @@ export default function Menu({ setVista, session }) {
         </div>
       );
     }
-
     if (!n) return null;
 
     return (
@@ -141,6 +207,95 @@ export default function Menu({ setVista, session }) {
         title={`Pendientes: ${n}`}
       >
         {n}
+      </div>
+    );
+  };
+
+  // ✅ Badge premium para Producción: ⚡ urg / 🕒 hoy
+  const BadgeP3 = ({ urg, hoy, loading }) => {
+    const u = Number(urg || 0);
+    const h = Number(hoy || 0);
+
+    if (loading) {
+      return (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            padding: "6px 10px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 950,
+            letterSpacing: 0.5,
+            border: "1px solid rgba(39,224,214,0.45)",
+            background: "rgba(0,0,0,0.35)",
+            color: "#fff7e6",
+          }}
+          title="Cargando pendientes…"
+        >
+          …
+        </div>
+      );
+    }
+
+    if (!u && !h) return null;
+
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          display: "flex",
+          gap: 8,
+        }}
+      >
+        {u ? (
+          <div
+            style={{
+              minWidth: 36,
+              height: 28,
+              padding: "0 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 950,
+              border: "1px solid rgba(255,90,90,0.55)",
+              background: "rgba(0,0,0,0.35)",
+              color: "#fff7e6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 10px 22px rgba(0,0,0,0.28)",
+            }}
+            title={`URGENTE: ${u}`}
+          >
+            ⚡ {u}
+          </div>
+        ) : null}
+
+        {h ? (
+          <div
+            style={{
+              minWidth: 36,
+              height: 28,
+              padding: "0 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 950,
+              border: "1px solid rgba(212,175,55,0.55)",
+              background: "rgba(0,0,0,0.35)",
+              color: "#fff7e6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 10px 22px rgba(0,0,0,0.28)",
+            }}
+            title={`PARA HOY: ${h}`}
+          >
+            🕒 {h}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -219,9 +374,13 @@ export default function Menu({ setVista, session }) {
                 position: "relative",
               }}
             >
-              {/* ✅ BADGE (solo donde aplique) */}
+              {/* ✅ BADGES */}
               {it.key === "orden" && (
                 <Badge value={it.badge} loading={it.badgeLoading} />
+              )}
+
+              {it.key === "p3" && (
+                <BadgeP3 urg={it.urg} hoy={it.hoy} loading={it.badgeLoading} />
               )}
 
               <div
