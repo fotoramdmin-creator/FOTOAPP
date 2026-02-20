@@ -408,26 +408,6 @@ export default function Menu({ setVista, session }) {
               >
                 {it.title}
               </div>
-
-              {isRetiros && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 12,
-                    right: 12,
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 11,
-                    fontWeight: 950,
-                    letterSpacing: 0.5,
-                    border: "1px solid rgba(212,175,55,0.45)",
-                    background: "rgba(0,0,0,0.35)",
-                    color: "#fff7e6",
-                  }}
-                >
-                  PRIVADO
-                </div>
-              )}
             </button>
           );
         })}
