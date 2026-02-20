@@ -1,5 +1,5 @@
 // src/ticketCortePdf.js
-import { jsPDF } from "jspdf";
+import jsPDF from "jspdf";
 import defaultLogo from "./assets/logo.png";
 
 // ========= Helpers =========
@@ -12,7 +12,7 @@ const fmtMoney = (n) => {
 const fmtDia = (dia) => {
   if (!dia) return "";
   try {
-    const d = dia instanceof Date ? dia : new Date(dia);
+    const d = dia instanceof Date ? dia : new Date(`${dia}T00:00:00`);
     if (isNaN(d.getTime())) return String(dia);
     return d.toLocaleDateString("es-MX", {
       weekday: "long",
@@ -48,32 +48,18 @@ const imageToDataURL = async (src) => {
   });
 };
 
-const triggerDownload = (blob, filename) => {
+const safeWindowOpenBlob = (blob, filename = "corte-caja.pdf") => {
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return url; // por si se quiere abrir también
-};
-
-const openOrNavigateWindow = (url, win) => {
-  try {
-    if (win && !win.closed) {
-      win.location.href = url;
-      return true;
-    }
-  } catch {}
-  try {
-    const w2 = window.open(url, "_blank", "noopener,noreferrer");
-    return !!w2;
-  } catch {
-    return false;
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  if (!w) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };
 
 // ========= Layout =========
@@ -96,6 +82,9 @@ function buildLayout(
   const HR_PAD_TOP = 3.2;
   const HR_PAD_BOT = 4.2;
   const HR_AFTER_JUMP = 1.4;
+
+  const LOGO_MAX_W = 44;
+  const LOGO_MAX_H = 20;
 
   const ent = Number(
     ingresos !== undefined && ingresos !== null ? ingresos : entradas
@@ -154,6 +143,8 @@ function buildLayout(
     HR_PAD_TOP,
     HR_PAD_BOT,
     HR_AFTER_JUMP,
+    LOGO_MAX_W,
+    LOGO_MAX_H,
     titleLines,
     diaLines: diaLabel ? diaLines : [],
     rows,
@@ -307,9 +298,8 @@ function drawTicket(doc, layout, logoDataUrl, logoDimsMm) {
   doc.text(footer2, M, y);
 }
 
-// ========= Public API =========
-// ✅ PASA targetWindow si abriste la pestaña antes (para evitar bloqueos)
-export async function imprimirTicketCorte({
+// ========= NUEVO: construir blob (para modal estilo Orden en Curso) =========
+export async function buildCortePdfBlob({
   dia,
   entradas,
   ingresos,
@@ -317,97 +307,111 @@ export async function imprimirTicketCorte({
   neto,
   caja = 0,
   aRetirar,
-  logoSrc,
-  targetWindow, // ✅ NUEVO
 }) {
+  let logoDataUrl = null;
+  let logoDimsMm = null;
+
   try {
-    let logoDataUrl = null;
-    let logoDimsMm = null;
+    const chosenLogo = defaultLogo; // tu logo.png
+    const [info, dataUrl] = await Promise.all([
+      loadImageInfo(chosenLogo),
+      imageToDataURL(chosenLogo),
+    ]);
+    logoDataUrl = dataUrl;
 
-    const chosenLogo = logoSrc || defaultLogo;
+    const maxW = 44;
+    const maxH = 20;
+    const ratio = info.w / info.h;
 
-    try {
-      const [info, dataUrl] = await Promise.all([
-        loadImageInfo(chosenLogo),
-        imageToDataURL(chosenLogo),
-      ]);
-      logoDataUrl = dataUrl;
+    let w = maxW;
+    let h = w / ratio;
 
-      const maxW = 44;
-      const maxH = 20;
-      const ratio = info.w / info.h;
-
-      let w = maxW;
-      let h = w / ratio;
-
-      if (h > maxH) {
-        h = maxH;
-        w = h * ratio;
-      }
-
-      logoDimsMm = { w: Number(w.toFixed(2)), h: Number(h.toFixed(2)) };
-    } catch {
-      logoDataUrl = null;
-      logoDimsMm = null;
+    if (h > maxH) {
+      h = maxH;
+      w = h * ratio;
     }
 
-    const tmp = new jsPDF({ unit: "mm", format: [58, 320], compress: true });
-    const layout = buildLayout(
-      { dia, entradas, ingresos, salidas, neto, caja, aRetirar },
-      tmp
-    );
-    const neededH = computeNeededHeight(layout, logoDimsMm);
-
-    const doc = new jsPDF({
-      unit: "mm",
-      format: [58, neededH],
-      compress: true,
-    });
-
-    const layoutFinal = buildLayout(
-      { dia, entradas, ingresos, salidas, neto, caja, aRetirar },
-      doc
-    );
-    drawTicket(doc, layoutFinal, logoDataUrl, logoDimsMm);
-
-    const blob = doc.output("blob");
-    const filename = "corte-caja.pdf";
-
-    // ✅ 1) Descarga forzada SIEMPRE
-    const blobUrl = triggerDownload(blob, filename);
-
-    // ✅ 2) Si abriste pestaña antes, la navega (esto sí pasa bloqueos)
-    openOrNavigateWindow(blobUrl, targetWindow);
-
-    // ✅ 3) Share (si existe) como extra (no estorba)
-    try {
-      const file = new File([blob], filename, { type: "application/pdf" });
-      const canShareFiles =
-        !!navigator.share &&
-        !!navigator.canShare &&
-        (() => {
-          try {
-            return navigator.canShare({ files: [file] });
-          } catch {
-            return false;
-          }
-        })();
-
-      if (canShareFiles) {
-        await navigator.share({
-          files: [file],
-          title: "Corte de caja",
-          text: "Ticket de corte de caja",
-        });
-      }
-    } catch {
-      // no pasa nada
-    }
-  } catch (err) {
-    console.error("Error al generar ticket de corte:", err);
-    alert("No se pudo generar el ticket. Revisa consola para ver el error.");
-    try {
-      if (targetWindow && !targetWindow.closed) targetWindow.close();
-    } catch {}
+    logoDimsMm = { w: Number(w.toFixed(2)), h: Number(h.toFixed(2)) };
+  } catch {
+    logoDataUrl = null;
+    logoDimsMm = null;
   }
+
+  const tmp = new jsPDF({ unit: "mm", format: [58, 320], compress: true });
+  const layout = buildLayout(
+    { dia, entradas, ingresos, salidas, neto, caja, aRetirar },
+    tmp
+  );
+  const neededH = computeNeededHeight(layout, logoDimsMm);
+
+  const doc = new jsPDF({
+    unit: "mm",
+    format: [58, neededH],
+    compress: true,
+  });
+
+  const layoutFinal = buildLayout(
+    { dia, entradas, ingresos, salidas, neto, caja, aRetirar },
+    doc
+  );
+  drawTicket(doc, layoutFinal, logoDataUrl, logoDimsMm);
+
+  return doc.output("blob");
+}
+
+// ========= NUEVO: compartir/descargar/abrir =========
+export async function shareCortePdf({
+  dia,
+  entradas,
+  ingresos,
+  salidas,
+  neto,
+  caja = 0,
+  aRetirar,
+  filename = "corte-caja.pdf",
+}) {
+  const blob = await buildCortePdfBlob({
+    dia,
+    entradas,
+    ingresos,
+    salidas,
+    neto,
+    caja,
+    aRetirar,
+  });
+
+  const file = new File([blob], filename, { type: "application/pdf" });
+
+  const canShareFiles =
+    !!navigator.share &&
+    !!navigator.canShare &&
+    (() => {
+      try {
+        return navigator.canShare({ files: [file] });
+      } catch {
+        return false;
+      }
+    })();
+
+  if (canShareFiles) {
+    await navigator.share({
+      files: [file],
+      title: "Corte de caja",
+      text: "Ticket de corte de caja",
+    });
+    return { blob, shared: true };
+  }
+
+  // fallback: abrir/descargar
+  safeWindowOpenBlob(blob, filename);
+  return { blob, shared: false };
+}
+
+export function downloadBlobUrl(url, filename) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "corte-caja.pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }

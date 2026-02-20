@@ -1,8 +1,13 @@
 // src/CuentasDetalleVista.js
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
 import logoCuadro from "./assets/FOTO RAMIREZ NUEVO CUADRO.png";
-import { imprimirTicketCorte } from "./ticketCortePdf";
+
+import {
+  buildCortePdfBlob,
+  shareCortePdf,
+  downloadBlobUrl,
+} from "./ticketCortePdf";
 
 const money = (n) => {
   const x = Number(n || 0);
@@ -44,12 +49,122 @@ const fmtDT = (v) => {
 export default function CuentasDetalleVista({ dia, onBack }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [err, setErr] = useState("");
 
   // ✅ Caja para cambio (se queda en caja)
   const [caja, setCaja] = useState("400");
 
+  // ==========================
+  // ✅ MODAL TICKET estilo Orden en Curso
+  // ==========================
+  const [ticketModalOpen, setTicketModalOpen] = useState(false);
+  const [ticketBlobUrl, setTicketBlobUrl] = useState("");
+  const [ticketGenStatus, setTicketGenStatus] = useState("");
+  const [printing, setPrinting] = useState(false);
+  const ticketWinRef = useRef(null);
+
+  function closeTicketModal() {
+    setTicketModalOpen(false);
+    setTicketGenStatus("");
+    if (ticketBlobUrl) {
+      try {
+        URL.revokeObjectURL(ticketBlobUrl);
+      } catch {}
+    }
+    setTicketBlobUrl("");
+  }
+
+  async function ensureCortePdfUrl() {
+    if (!dia) return "";
+    if (ticketBlobUrl) return ticketBlobUrl;
+
+    setTicketGenStatus("Generando PDF…");
+
+    const blob = await buildCortePdfBlob({
+      dia,
+      entradas: resumen.entradas,
+      salidas: resumen.salidas,
+      neto: resumen.neto,
+      caja: cajaNum,
+      aRetirar,
+    });
+
+    const url = URL.createObjectURL(blob);
+    setTicketBlobUrl(url);
+    setTicketGenStatus("✅ PDF listo.");
+    return url;
+  }
+
+  async function openTicketInNewTabSafe() {
+    try {
+      const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+      if (!w) {
+        alert(
+          "Tu navegador bloqueó la ventana. Activa pop-ups para esta página y vuelve a intentar."
+        );
+        return;
+      }
+      ticketWinRef.current = w;
+
+      const url = await ensureCortePdfUrl();
+      if (!url) return;
+
+      try {
+        w.location.href = url;
+      } catch {
+        w.document.write(
+          `<html><head><title>Corte</title></head><body style="margin:0">
+             <a href="${url}" target="_self">Abrir corte</a>
+           </body></html>`
+        );
+        w.document.close();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("No pude abrir el corte.");
+    }
+  }
+
+  async function downloadTicketPdf() {
+    try {
+      const url = await ensureCortePdfUrl();
+      if (!url) return;
+      downloadBlobUrl(url, `corte_${dia || "dia"}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert("No pude descargar el corte.");
+    }
+  }
+
+  async function shareTicketMobile() {
+    // ✅ esto es lo que te abre el share sheet para RAWBT en celular
+    try {
+      setPrinting(true);
+      setTicketGenStatus("Preparando para compartir…");
+
+      await shareCortePdf({
+        dia,
+        entradas: resumen.entradas,
+        salidas: resumen.salidas,
+        neto: resumen.neto,
+        caja: cajaNum,
+        aRetirar,
+        filename: `corte_${dia || "dia"}.pdf`,
+      });
+
+      setTicketGenStatus("✅ Listo para RAWBT / compartir.");
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "No se pudo compartir el corte.");
+      setTicketGenStatus("❌ No se pudo compartir.");
+    } finally {
+      setPrinting(false);
+    }
+  }
+
+  // ==========================
+  // DATOS
+  // ==========================
   const fetchDetalle = async () => {
     if (!dia) return;
     setLoading(true);
@@ -106,34 +221,80 @@ export default function CuentasDetalleVista({ dia, onBack }) {
     return isFinite(x) ? x : 0;
   }, [resumen.neto, cajaNum]);
 
+  // ✅ ABRIR MODAL (como Orden en curso)
   const onPrint = async () => {
-    // ✅ CLAVE: abre pestaña INMEDIATO (sin await) para evitar bloqueos
-    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
-
+    setTicketModalOpen(true);
+    setTicketGenStatus("Generando PDF…");
     try {
-      setPrinting(true);
-      await imprimirTicketCorte({
-        dia,
-        entradas: resumen.entradas,
-        salidas: resumen.salidas,
-        neto: resumen.neto,
-        caja: cajaNum,
-        aRetirar,
-        logoSrc: logoCuadro,
-        targetWindow: w, // ✅ pasa la pestaña pre-abierta
-      });
+      await ensureCortePdfUrl();
     } catch (e) {
-      window.alert(e?.message || "No se pudo imprimir el ticket");
-      try {
-        if (w && !w.closed) w.close();
-      } catch {}
-    } finally {
-      setPrinting(false);
+      console.error(e);
+      setTicketGenStatus("❌ No se pudo generar el PDF.");
     }
   };
 
   return (
     <div style={S.page}>
+      {/* ✅ MODAL TICKET (SIN VISTA PREVIA) */}
+      {ticketModalOpen && (
+        <div style={S.modalOverlay} onClick={closeTicketModal}>
+          <div style={S.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalTop}>
+              <div style={S.modalTitle}>
+                Corte · {dia || "—"}{" "}
+                {ticketGenStatus ? `· ${ticketGenStatus}` : ""}
+              </div>
+
+              <div style={S.modalBtns}>
+                <button
+                  type="button"
+                  style={S.btnCream}
+                  onClick={shareTicketMobile}
+                  disabled={printing}
+                  title="En celular abre el share para RAWBT"
+                >
+                  📲 Compartir / RAWBT
+                </button>
+
+                <button
+                  type="button"
+                  style={S.btnGhost}
+                  onClick={openTicketInNewTabSafe}
+                  disabled={!dia}
+                  title="Abre el PDF en otra pestaña para imprimir"
+                >
+                  🖨️ Abrir / Imprimir
+                </button>
+
+                <button
+                  type="button"
+                  style={S.btnGhost}
+                  onClick={downloadTicketPdf}
+                  disabled={!dia}
+                >
+                  ⬇️ Descargar
+                </button>
+
+                <button
+                  type="button"
+                  style={S.btnDanger}
+                  onClick={closeTicketModal}
+                >
+                  ✖ Cerrar
+                </button>
+              </div>
+            </div>
+
+            <div style={S.modalBody}>
+              <div style={S.modalHint}>
+                En celular usa <b>Compartir / RAWBT</b>. En compu puedes{" "}
+                <b>Abrir/Imprimir</b> o <b>Descargar</b>.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={S.header}>
         <img src={logoCuadro} alt="Foto Ramírez" style={S.logo} />
         <div style={S.hTitle}>CUENTAS · DETALLE</div>
@@ -162,7 +323,7 @@ export default function CuentasDetalleVista({ dia, onBack }) {
             disabled={printing}
             type="button"
           >
-            {printing ? "Imprimiendo..." : "Imprimir ticket"}
+            {printing ? "Preparando..." : "Imprimir ticket"}
           </button>
         </div>
 
@@ -320,6 +481,16 @@ const S = {
     letterSpacing: 0.2,
     cursor: "pointer",
   },
+  btnDanger: {
+    background: "rgba(255,70,70,0.12)",
+    color: "#ffd2d2",
+    border: "1px solid rgba(255,70,70,0.30)",
+    borderRadius: 14,
+    padding: "10px 14px",
+    fontWeight: 900,
+    letterSpacing: 0.2,
+    cursor: "pointer",
+  },
 
   err: {
     marginTop: 10,
@@ -438,4 +609,49 @@ const S = {
   },
   emptyTitle: { fontSize: 18, fontWeight: 950 },
   emptySub: { opacity: 0.8, marginTop: 6, fontSize: 13, lineHeight: 1.35 },
+
+  // ===== Modal (tipo Orden en Curso) =====
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.65)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    zIndex: 9999,
+  },
+  modalCard: {
+    width: "min(820px, 100%)",
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(12,15,20,0.96)",
+    overflow: "hidden",
+    boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
+  },
+  modalTop: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: 12,
+    borderBottom: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.03)",
+    flexWrap: "wrap",
+  },
+  modalTitle: {
+    fontWeight: 950,
+    letterSpacing: ".3px",
+    fontSize: 14,
+    overflowWrap: "anywhere",
+    color: "#f5f1e8",
+  },
+  modalBtns: { display: "flex", gap: 10, flexWrap: "wrap" },
+  modalBody: { padding: "14px 12px" },
+  modalHint: {
+    opacity: 0.82,
+    fontSize: 13,
+    lineHeight: 1.35,
+    color: "#f5f1e8",
+  },
 };
