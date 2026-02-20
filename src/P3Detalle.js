@@ -22,6 +22,9 @@ export default function P3Detalle({ pedidoId, onBack }) {
   const isUrgente = !!pedido?.urgente;
   const tomaResumen = useMemo(() => buildTomaResumen(rows), [rows]);
 
+  // ✅ NUEVO: conteo renglones (simple: rows.length)
+  const renglonesCount = useMemo(() => (rows ? rows.length : 0), [rows]);
+
   const fetchAll = async () => {
     setLoading(true);
     try {
@@ -213,7 +216,13 @@ export default function P3Detalle({ pedidoId, onBack }) {
       {/* Hero */}
       <div style={S.hero}>
         <div style={S.heroTop}>
-          <div style={S.heroTitle}>{pedido?.cliente_nombre || ""}</div>
+          <div style={S.heroTitleRow}>
+            <div style={S.heroTitle}>{pedido?.cliente_nombre || ""}</div>
+
+            {/* ✅ NUEVO: RENGLONES: X (verde llamativo) */}
+            <div style={S.renglonesPill}>RENGLONES: {renglonesCount}</div>
+          </div>
+
           <span style={S.badgeUrg}>{isUrgente ? "⚡ URGENTE" : "GENERAL"}</span>
         </div>
 
@@ -391,6 +400,11 @@ const THEME = {
   dangerBorder: "rgba(255,80,80,0.55)",
   dangerBg: "rgba(255,80,80,0.14)",
   dangerText: "rgba(255,220,220,0.98)",
+
+  // ✅ VERDE (para pill renglones)
+  green: "#25F59A",
+  greenSoft: "rgba(37,245,154,0.14)",
+  greenBorder: "rgba(37,245,154,0.34)",
 };
 
 function makeStyles(isMobile, isUrgente) {
@@ -472,7 +486,30 @@ function makeStyles(isMobile, isUrgente) {
       flexWrap: "wrap",
     },
 
+    // ✅ NUEVO: fila nombre + pill renglones (se acomoda bien en móvil)
+    heroTitleRow: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap",
+      minWidth: 0,
+    },
+
     heroTitle: { fontWeight: 950, fontSize: 18, color: THEME.text },
+
+    // ✅ NUEVO: RENGLONES pill verde
+    renglonesPill: {
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${THEME.greenBorder}`,
+      background: THEME.greenSoft,
+      fontWeight: 1000,
+      fontSize: 13,
+      color: THEME.green,
+      letterSpacing: 0.4,
+      whiteSpace: "nowrap",
+      boxShadow: "0 10px 22px rgba(0,0,0,0.18)",
+    },
 
     badgeUrg: {
       padding: "6px 10px",

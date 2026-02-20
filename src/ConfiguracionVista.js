@@ -61,7 +61,7 @@ export default function ConfiguracionVista({ session, onBack }) {
   const isAdmin = session?.admin === true;
 
   // ====== Navegación interna ======
-  // home | password | precios | agregar
+  // home | password | precios | agregar | usuarios
   const [tab, setTab] = useState("home");
 
   // ====== Usuarios (para selector admin) ======
@@ -235,6 +235,88 @@ export default function ConfiguracionVista({ session, onBack }) {
     setTab("precios");
   };
 
+  // ====== Usuarios (ADMIN) Alta/Baja (SIN ROMPER TU ESTRUCTURA) ======
+  const [uNombre, setUNombre] = useState("");
+  const [uUsername, setUUsername] = useState("");
+  const [uCodigo, setUCodigo] = useState(""); // PIN que ya usas
+  const [uAdmin, setUAdmin] = useState(false);
+  const [uActivo, setUActivo] = useState(true);
+  const [creatingUser, setCreatingUser] = useState(false);
+
+  // ojo: savingId ya existe y lo usamos también aquí (solo para mostrar "Guardando…")
+  const patchUsuario = (id, patch) => {
+    setUsuarios((prev) =>
+      prev.map((u) => (u.id === id ? { ...u, ...patch } : u))
+    );
+  };
+
+  const createUsuario = async () => {
+    if (!isAdmin) return;
+
+    const nombre = String(uNombre || "").trim();
+    const username = String(uUsername || "").trim();
+    const codigoStr = String(uCodigo || "").trim();
+
+    if (!nombre) return alert("Falta NOMBRE");
+    if (!username) return alert("Falta USERNAME");
+    if (!codigoStr) return alert("Falta CÓDIGO/PIN");
+
+    // Respeta que "codigo" es int4 en tu tabla
+    const codigoNum = Number(codigoStr);
+    if (!isFinite(codigoNum)) return alert("CÓDIGO debe ser numérico");
+
+    setCreatingUser(true);
+
+    // ✅ INSERT directo: NO borramos nada, NO cambiamos esquema
+    // - codigo (int4) = numero
+    // - pin (text) = mismo valor (por compatibilidad con tu login)
+    const payload = {
+      nombre,
+      username,
+      codigo: codigoNum,
+      pin: codigoStr,
+      admin: !!uAdmin,
+      activo: !!uActivo,
+      // tipo: "PERMANENTE", // si quieres forzarlo siempre, descomenta
+    };
+
+    const { error } = await supabase.from("usuarios").insert(payload);
+
+    setCreatingUser(false);
+
+    if (error) return alert(error.message || "Error al crear usuario");
+
+    alert("Usuario creado ✅");
+    setUNombre("");
+    setUUsername("");
+    setUCodigo("");
+    setUAdmin(false);
+    setUActivo(true);
+
+    await fetchUsuarios();
+  };
+
+  const toggleActivoUsuario = async (u) => {
+    if (!isAdmin) return;
+
+    const nuevoActivo = !u.activo;
+
+    setSavingId(u.id);
+
+    // ✅ Baja lógica: solo activo true/false (no rompe relaciones)
+    const { error } = await supabase
+      .from("usuarios")
+      .update({ activo: nuevoActivo })
+      .eq("id", u.id);
+
+    setSavingId(null);
+
+    if (error) return alert(error.message || "Error al actualizar usuario");
+
+    // actualiza UI rápido
+    patchUsuario(u.id, { activo: nuevoActivo });
+  };
+
   // ====== UI helpers ======
   const CardBtn = ({ title, subtitle, onClick, disabled }) => (
     <button
@@ -284,7 +366,7 @@ export default function ConfiguracionVista({ session, onBack }) {
     </div>
   );
 
-  // ✅ NUEVO: Label arriba de inputs (para que se vean los nombres)
+  // ✅ Label arriba de inputs (para que se vean los nombres)
   const FieldLabel = ({ children }) => (
     <div
       style={{
@@ -329,11 +411,23 @@ export default function ConfiguracionVista({ session, onBack }) {
             onClick={() => setTab("agregar")}
             disabled={!isAdmin}
           />
+
+          <CardBtn
+            title="Usuarios (Alta / Baja)"
+            subtitle="Agregar usuarios nuevos o desactivar usuarios existentes."
+            onClick={async () => {
+              if (!isAdmin) return;
+              await fetchUsuarios();
+              setTab("usuarios");
+            }}
+            disabled={!isAdmin}
+          />
         </div>
 
         {!isAdmin && (
           <div style={{ marginTop: 12, fontSize: 12, opacity: 0.75 }}>
-            Las opciones de precios/paquetes solo están disponibles para ADMIN.
+            Las opciones de precios/paquetes/usuarios solo están disponibles
+            para ADMIN.
           </div>
         )}
       </div>
@@ -425,7 +519,6 @@ export default function ConfiguracionVista({ session, onBack }) {
     );
   }
 
-  /* ✅ SOLO CAMBIO AQUÍ: labels arriba de los inputs en "precios" */
   if (tab === "precios") {
     return (
       <div style={{ padding: 12 }}>
@@ -581,11 +674,199 @@ export default function ConfiguracionVista({ session, onBack }) {
     );
   }
 
-  // tab === "agregar"
+  if (tab === "agregar") {
+    return (
+      <div style={{ padding: 12 }}>
+        <TopBar title="Aumentar paquete" />
+
+        <div
+          style={{
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 16,
+            padding: 12,
+          }}
+        >
+          <div style={{ fontWeight: 1000, marginBottom: 10 }}>
+            Nuevo paquete
+          </div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            <div>
+              <FieldLabel>TAMAÑO</FieldLabel>
+              <input
+                value={aTamano}
+                onChange={(e) => setATamano(e.target.value)}
+                placeholder="Tamaño (ej. CALIA 2)"
+                style={{ width: "100%", padding: 12, borderRadius: 12 }}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>CANTIDAD</FieldLabel>
+              <input
+                value={aCantidad}
+                onChange={(e) => setACantidad(e.target.value)}
+                inputMode="numeric"
+                placeholder="Cantidad"
+                style={{ width: "100%", padding: 12, borderRadius: 12 }}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>PRECIO BASE</FieldLabel>
+              <input
+                value={aPrecioBase}
+                onChange={(e) => setAPrecioBase(e.target.value)}
+                inputMode="decimal"
+                placeholder="Precio base"
+                style={{ width: "100%", padding: 12, borderRadius: 12 }}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+              }}
+            >
+              <div>
+                <FieldLabel>URGENTE</FieldLabel>
+                <input
+                  value={aUrg}
+                  onChange={(e) => setAUrg(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Aumento urgente"
+                  style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                />
+              </div>
+              <div>
+                <FieldLabel>KENFOR</FieldLabel>
+                <input
+                  value={aKen}
+                  onChange={(e) => setAKen(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Aumento Kenfor"
+                  style={{ padding: 12, borderRadius: 12, width: "100%" }}
+                />
+              </div>
+            </div>
+
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={!!aActivo}
+                onChange={(e) => setAActivo(e.target.checked)}
+              />
+              <span style={{ fontWeight: 900 }}>Activo</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={createPaquete}
+              disabled={creating}
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                fontWeight: 1000,
+                cursor: "pointer",
+                opacity: creating ? 0.7 : 1,
+              }}
+            >
+              {creating ? "Creando…" : "Crear paquete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // tab === "usuarios"
   return (
     <div style={{ padding: 12 }}>
-      <TopBar title="Aumentar paquete" />
+      <TopBar title="Usuarios (Alta / Baja)" />
 
+      {/* ===== Alta usuario ===== */}
+      <div
+        style={{
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 16,
+          padding: 12,
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ fontWeight: 1000, marginBottom: 10 }}>
+          Agregar usuario
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <div>
+            <FieldLabel>NOMBRE</FieldLabel>
+            <input
+              value={uNombre}
+              onChange={(e) => setUNombre(e.target.value)}
+              placeholder="Ej. LALO"
+              style={{ width: "100%", padding: 12, borderRadius: 12 }}
+            />
+          </div>
+
+          <div>
+            <FieldLabel>USERNAME</FieldLabel>
+            <input
+              value={uUsername}
+              onChange={(e) => setUUsername(e.target.value)}
+              placeholder="Ej. lalo"
+              style={{ width: "100%", padding: 12, borderRadius: 12 }}
+            />
+          </div>
+
+          <div>
+            <FieldLabel>CÓDIGO / PIN</FieldLabel>
+            <input
+              value={uCodigo}
+              onChange={(e) => setUCodigo(e.target.value)}
+              inputMode="numeric"
+              placeholder="Ej. 1234"
+              style={{ width: "100%", padding: 12, borderRadius: 12 }}
+            />
+          </div>
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={!!uAdmin}
+              onChange={(e) => setUAdmin(e.target.checked)}
+            />
+            <span style={{ fontWeight: 900 }}>Admin</span>
+          </label>
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={!!uActivo}
+              onChange={(e) => setUActivo(e.target.checked)}
+            />
+            <span style={{ fontWeight: 900 }}>Activo</span>
+          </label>
+
+          <button
+            type="button"
+            onClick={createUsuario}
+            disabled={creatingUser}
+            style={{
+              padding: 12,
+              borderRadius: 14,
+              fontWeight: 1000,
+              cursor: "pointer",
+              opacity: creatingUser ? 0.7 : 1,
+            }}
+          >
+            {creatingUser ? "Creando…" : "Crear usuario"}
+          </button>
+        </div>
+      </div>
+
+      {/* ===== Lista para desactivar/activar ===== */}
       <div
         style={{
           border: "1px solid rgba(255,255,255,0.12)",
@@ -593,75 +874,79 @@ export default function ConfiguracionVista({ session, onBack }) {
           padding: 12,
         }}
       >
-        <div style={{ fontWeight: 1000, marginBottom: 10 }}>Nuevo paquete</div>
-
-        <div style={{ display: "grid", gap: 10 }}>
-          <input
-            value={aTamano}
-            onChange={(e) => setATamano(e.target.value)}
-            placeholder="Tamaño (ej. CALIA 2)"
-            style={{ width: "100%", padding: 12, borderRadius: 12 }}
-          />
-
-          <input
-            value={aCantidad}
-            onChange={(e) => setACantidad(e.target.value)}
-            inputMode="numeric"
-            placeholder="Cantidad"
-            style={{ width: "100%", padding: 12, borderRadius: 12 }}
-          />
-
-          <input
-            value={aPrecioBase}
-            onChange={(e) => setAPrecioBase(e.target.value)}
-            inputMode="decimal"
-            placeholder="Precio base"
-            style={{ width: "100%", padding: 12, borderRadius: 12 }}
-          />
-
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
-          >
-            <input
-              value={aUrg}
-              onChange={(e) => setAUrg(e.target.value)}
-              inputMode="decimal"
-              placeholder="Aumento urgente"
-              style={{ padding: 12, borderRadius: 12 }}
-            />
-            <input
-              value={aKen}
-              onChange={(e) => setAKen(e.target.value)}
-              inputMode="decimal"
-              placeholder="Aumento Kenfor"
-              style={{ padding: 12, borderRadius: 12 }}
-            />
-          </div>
-
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={!!aActivo}
-              onChange={(e) => setAActivo(e.target.checked)}
-            />
-            <span style={{ fontWeight: 900 }}>Activo</span>
-          </label>
-
-          <button
-            type="button"
-            onClick={createPaquete}
-            disabled={creating}
-            style={{
-              padding: 12,
-              borderRadius: 14,
-              fontWeight: 1000,
-              cursor: "pointer",
-              opacity: creating ? 0.7 : 1,
-            }}
-          >
-            {creating ? "Creando…" : "Crear paquete"}
-          </button>
+        <div style={{ fontWeight: 1000, marginBottom: 10 }}>
+          Activar / Desactivar usuario
         </div>
+
+        {loadingUsers ? (
+          <div style={{ opacity: 0.8 }}>Cargando…</div>
+        ) : usuarios.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>Sin usuarios.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {usuarios.map((u) => {
+              const isSaving = savingId === u.id;
+              return (
+                <div
+                  key={u.id}
+                  style={{
+                    padding: 12,
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ fontWeight: 1000 }}>
+                      {u.nombre}{" "}
+                      <span style={{ fontWeight: 700, opacity: 0.8 }}>
+                        · {u.username}
+                      </span>
+                    </div>
+
+                    <div style={{ flex: 1 }} />
+
+                    <label
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!u.activo}
+                        onChange={() => toggleActivoUsuario(u)}
+                        disabled={isSaving}
+                      />
+                      <span style={{ fontWeight: 900 }}>
+                        {u.activo ? "Activo" : "Inactivo"}
+                      </span>
+                    </label>
+
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>
+                      {u.admin ? "ADMIN" : "USUARIO"} · Código:{" "}
+                      <b>{u.codigo ?? "-"}</b>
+                    </span>
+
+                    {isSaving && (
+                      <span style={{ fontSize: 12, opacity: 0.85 }}>
+                        Guardando…
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

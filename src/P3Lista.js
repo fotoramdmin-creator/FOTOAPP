@@ -147,6 +147,40 @@ export default function P3Lista({ categoria, onBack, onOpenPedido }) {
     }
   };
 
+  // ✅ NUEVO: trae conteo de renglones (detalles) por pedido_id
+  const fetchRenglonesCount = async (pedidoIds) => {
+    try {
+      const ids = Array.from(new Set((pedidoIds || []).filter(Boolean)));
+      if (ids.length === 0) return {};
+
+      // Traemos solo pedido_id de detalles_pedido y contamos en JS (simple y sin tocar views)
+      const { data, error } = await supabase
+        .from("detalles_pedido")
+        .select("pedido_id")
+        .in("pedido_id", ids);
+
+      if (error) {
+        console.error("P3Lista fetchRenglonesCount error:", error);
+        return {};
+      }
+
+      const map = {};
+      for (const x of data || []) {
+        const k = x?.pedido_id;
+        if (!k) continue;
+        map[k] = (map[k] || 0) + 1;
+      }
+
+      // si un pedido no regresó filas, lo dejamos en 0
+      for (const id of ids) if (!(id in map)) map[id] = 0;
+
+      return map;
+    } catch (e) {
+      console.error("P3Lista fetchRenglonesCount catch:", e);
+      return {};
+    }
+  };
+
   const fetchList = async () => {
     setLoading(true);
     try {
@@ -181,12 +215,32 @@ export default function P3Lista({ categoria, onBack, onOpenPedido }) {
         if (r2.error) throw r2.error;
 
         const filtered2 = (r2.data ?? []).filter((r) => !isAllDone(r));
-        setRows(filtered2);
+
+        // ✅ NUEVO: agrega renglones_count
+        const countMap2 = await fetchRenglonesCount(
+          filtered2.map((x) => x.pedido_id)
+        );
+        const enriched2 = filtered2.map((x) => ({
+          ...x,
+          renglones_count: countMap2?.[x.pedido_id] ?? 0,
+        }));
+
+        setRows(enriched2);
         return;
       }
 
       const filtered1 = (r1.data ?? []).filter((r) => !isAllDone(r));
-      setRows(filtered1);
+
+      // ✅ NUEVO: agrega renglones_count
+      const countMap1 = await fetchRenglonesCount(
+        filtered1.map((x) => x.pedido_id)
+      );
+      const enriched1 = filtered1.map((x) => ({
+        ...x,
+        renglones_count: countMap1?.[x.pedido_id] ?? 0,
+      }));
+
+      setRows(enriched1);
     } catch (e) {
       console.error("P3Lista fetchList error:", e);
       setRows([]);
@@ -296,6 +350,11 @@ export default function P3Lista({ categoria, onBack, onOpenPedido }) {
               ? THEME.red
               : THEME.yellow;
 
+          // ✅ renglones (conteo)
+          const renglones = Number.isFinite(Number(r.renglones_count))
+            ? Number(r.renglones_count)
+            : 0;
+
           // ✅ PILL izquierdo (sin "resta": solo tiempo transcurrido + semáforo)
           const leftPillContent =
             categoria === "URGENTE" ? (
@@ -348,7 +407,10 @@ export default function P3Lista({ categoria, onBack, onOpenPedido }) {
                   </div>
 
                   <div style={S.mobileBottomRow}>
-                    <div style={S.namePillFull}>{r.cliente_nombre}</div>
+                    <div style={S.nameRowMobile}>
+                      <div style={S.namePillFlex}>{r.cliente_nombre}</div>
+                      <div style={S.renglonesPill}>RENGLONES: {renglones}</div>
+                    </div>
                   </div>
 
                   <div style={S.mobileChipsRow}>
@@ -375,6 +437,9 @@ export default function P3Lista({ categoria, onBack, onOpenPedido }) {
                     <div style={S.line1Pills}>
                       <span style={S.tomaPill}>{tomaNum}</span>
                       <span style={S.namePill}>{r.cliente_nombre}</span>
+                      <span style={S.renglonesPill}>
+                        RENGLONES: {renglones}
+                      </span>
                     </div>
 
                     <div style={S.line2}>
@@ -635,6 +700,21 @@ function makeStyles(isMobile) {
       whiteSpace: "nowrap",
     },
 
+    // ✅ NUEVO: pill RENGLONES (verde llamativo)
+    renglonesPill: {
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${THEME.greenBorder}`,
+      background: THEME.greenSoft,
+      fontWeight: 1000,
+      fontSize: 13,
+      color: THEME.green,
+      letterSpacing: 0.4,
+      flexShrink: 0,
+      whiteSpace: "nowrap",
+      boxShadow: "0 10px 22px rgba(0,0,0,0.18)",
+    },
+
     line2: { display: "flex", gap: 8, flexWrap: "wrap" },
 
     chev: {
@@ -658,8 +738,19 @@ function makeStyles(isMobile) {
       alignItems: "center",
     },
 
-    namePillFull: {
+    // ✅ NUEVO: fila nombre + renglones en mobile
+    nameRowMobile: {
       width: "100%",
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      minWidth: 0,
+    },
+
+    // nombre flexible (para que deje espacio al pill verde)
+    namePillFlex: {
+      flex: 1,
+      minWidth: 0,
       padding: "10px 14px",
       borderRadius: 999,
       border: `1px solid ${THEME.goldSoft}`,

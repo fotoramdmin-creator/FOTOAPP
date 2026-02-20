@@ -1,21 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 import { buildTicketText } from "./ticketBuilder";
 import { copyTicketToClipboard } from "./printRawbt";
-
-// ✅ PDF (con logo) — el logo se maneja dentro de ticketPdfBuilder.js
 import { buildTicketPdfBlob } from "./ticketPdfBuilder";
 
 /** ⚠️ Importante:
  * - En pantalla NO mostramos dinero.
  * - El ticket/nota virtual para el cliente sí puede incluirlo.
  */
-
-function money(n) {
-  const x = Number(n || 0);
-  return x.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
-}
 
 function onlyDigits(s) {
   return String(s || "").replace(/\D+/g, "");
@@ -104,8 +97,99 @@ export default function OrdenEnCursoP2() {
   // n_toma por renglón (detalles_pedido)
   const [nTomaPorDetalle, setNTomaPorDetalle] = useState({}); // { [detalleId]: "123" }
 
-  // ✅ feedback visual al guardar (sin cambiar colores)
+  // ✅ feedback visual al guardar
   const [savedPulse, setSavedPulse] = useState({}); // { [detalleId]: true }
+
+  // ============================
+  // ✅ TICKET (PC + RAWBT)
+  // - En PC (Chrome + Codesandbox iframe) NO se puede previsualizar PDF en modal (bloquea).
+  // - Solución: generar PDF y dar:
+  //   1) Abrir/Imprimir en pestaña (o ventana) (sin bloquear popups)
+  //   2) Descargar
+  //   3) Cerrar
+  // - RAWBT: sigue por texto (copyTicketToClipboard)
+  // ============================
+  const [ticketModalOpen, setTicketModalOpen] = useState(false);
+  const [ticketBlobUrl, setTicketBlobUrl] = useState("");
+  const [ticketGenStatus, setTicketGenStatus] = useState("");
+  const ticketWinRef = useRef(null);
+
+  function closeTicketModal() {
+    setTicketModalOpen(false);
+    setTicketGenStatus("");
+    if (ticketWinRef.current && !ticketWinRef.current.closed) {
+      try {
+        // no cerramos la pestaña del usuario
+      } catch {}
+    }
+    if (ticketBlobUrl) {
+      try {
+        URL.revokeObjectURL(ticketBlobUrl);
+      } catch {}
+    }
+    setTicketBlobUrl("");
+  }
+
+  async function ensureTicketPdfUrl() {
+    if (!pedido) return "";
+    if (ticketBlobUrl) return ticketBlobUrl;
+
+    setTicketGenStatus("Generando PDF…");
+    const blob = await buildTicketPdfBlob({ pedido, renglones });
+    const url = URL.createObjectURL(blob);
+    setTicketBlobUrl(url);
+    setTicketGenStatus("✅ PDF listo.");
+    return url;
+  }
+
+  async function openTicketInNewTabSafe() {
+    // ✅ abre ventana “sin bloqueo” (sincrónico) y luego le asigna el blob url
+    try {
+      const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+      if (!w) {
+        alert(
+          "Tu navegador bloqueó la ventana. Activa pop-ups para esta página y vuelve a intentar."
+        );
+        return;
+      }
+      ticketWinRef.current = w;
+
+      const url = await ensureTicketPdfUrl();
+      if (!url) return;
+
+      try {
+        w.location.href = url;
+      } catch {
+        // fallback: si no deja asignar location
+        w.document.write(
+          `<html><head><title>Ticket</title></head><body style="margin:0">
+             <a href="${url}" target="_self">Abrir ticket</a>
+           </body></html>`
+        );
+        w.document.close();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("No pude abrir el ticket.");
+    }
+  }
+
+  async function downloadTicketPdf() {
+    try {
+      const url = await ensureTicketPdfUrl();
+      if (!url) return;
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ticket_${pedidoId || "pedido"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      console.error(e);
+      alert("No pude descargar el ticket.");
+    }
+  }
 
   // =====================
   // LISTA (orden de llegada / FIFO)
@@ -129,15 +213,6 @@ export default function OrdenEnCursoP2() {
 
     const rows = Array.isArray(data) ? data : [];
 
-    console.log(
-      "P2 rows:",
-      rows.map((r) => ({
-        id: r.pedido_id,
-        nombre: r.cliente_nombre,
-        p_2listo: r.p_2listo,
-      }))
-    );
-
     // ✅ Orden: COMO LLEGARON (FIFO) → por fecha_creacion / created_at ASC
     rows.sort((a, b) => {
       const da =
@@ -145,11 +220,10 @@ export default function OrdenEnCursoP2() {
       const db =
         b.fecha_creacion || b.pedido_fecha || b.fecha || b.created_at || "";
 
-      if (da && db) return String(da).localeCompare(String(db)); // ASC (más viejo primero)
+      if (da && db) return String(da).localeCompare(String(db)); // ASC
       if (da && !db) return -1;
       if (!da && db) return 1;
 
-      // fallback por id asc (estable)
       const ia = String(a.pedido_id ?? a.id ?? "");
       const ib = String(b.pedido_id ?? b.id ?? "");
       return ia.localeCompare(ib);
@@ -249,7 +323,7 @@ export default function OrdenEnCursoP2() {
           "ticket_whatsapp",
           "ticket_impreso",
           "p_2listo",
-          // ✅ flags de revisión (para flujo P2 -> P1)
+          // ✅ flags de revisión
           "necesita_revision",
           "motivo_revision",
           "necesita_revision_at",
@@ -262,6 +336,16 @@ export default function OrdenEnCursoP2() {
 
     setPedido({ ...pBase, ...(pDb || {}) });
 
+    // reset ticket modal por pedido
+    if (ticketBlobUrl) {
+      try {
+        URL.revokeObjectURL(ticketBlobUrl);
+      } catch {}
+    }
+    setTicketBlobUrl("");
+    setTicketModalOpen(false);
+    setTicketGenStatus("");
+
     setStatus("✅ Detalle listo.");
     setLoading(false);
   }
@@ -273,6 +357,7 @@ export default function OrdenEnCursoP2() {
     setRenglones([]);
     setNTomaPorDetalle({});
     setSavedPulse({});
+    closeTicketModal();
     cargarDetalle(id);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -284,6 +369,7 @@ export default function OrdenEnCursoP2() {
     setRenglones([]);
     setNTomaPorDetalle({});
     setSavedPulse({});
+    closeTicketModal();
     setStatus("");
     window.scrollTo({ top: 0, behavior: "smooth" });
     cargarLista();
@@ -373,7 +459,7 @@ export default function OrdenEnCursoP2() {
 
     if (pedido?.urgente) await marcarInicioUrgenteSiFalta();
 
-    // ✅ feedback visual (pulse) SIN tocar colores
+    // ✅ feedback visual (pulse)
     setSavedPulse((prev) => ({ ...prev, [did]: true }));
     setTimeout(() => {
       setSavedPulse((prev) => {
@@ -558,35 +644,25 @@ export default function OrdenEnCursoP2() {
   }
 
   // =====================
-  // PDF (compartir a WhatsApp manualmente) — profesional
+  // ✅ IMPRIMIR / VER EN COMPU (PDF)
+  // - Abre modal con botones: Abrir/Imprimir (pestaña), Descargar, Cerrar
+  // - Marca ticket_impreso en DB
   // =====================
-  async function enviarPdfWhatsApp() {
+  async function imprimirTicketEnCompu() {
     if (!pedido) return;
 
+    setTicketModalOpen(true);
+    setTicketGenStatus("Generando PDF…");
+
     setLoading(true);
-    setStatus("Generando PDF…");
+    setStatus("Generando ticket…");
 
     try {
+      // Genera y guarda url (pero no intenta embebido)
       const blob = await buildTicketPdfBlob({ pedido, renglones });
-      const file = new File([blob], `ticket_${pedidoId}.pdf`, {
-        type: "application/pdf",
-      });
-
-      if (
-        navigator.share &&
-        (navigator.canShare?.({ files: [file] }) ?? true)
-      ) {
-        await navigator.share({ title: "Ticket Foto Ramirez", files: [file] });
-        setStatus("✅ PDF listo para enviar.");
-      } else {
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank", "noopener,noreferrer");
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-        alert(
-          "Tu navegador no soporta compartir archivos. Descarga el PDF y compártelo a WhatsApp desde Descargas."
-        );
-        setStatus("✅ PDF abierto.");
-      }
+      const url = URL.createObjectURL(blob);
+      setTicketBlobUrl(url);
+      setTicketGenStatus("✅ PDF listo (abre o descarga).");
 
       try {
         await supabase
@@ -596,15 +672,21 @@ export default function OrdenEnCursoP2() {
       } catch (e) {
         console.warn("No pude marcar ticket_impreso:", e);
       }
+
+      setStatus("✅ Ticket listo.");
     } catch (e) {
       console.error(e);
-      setStatus("❌ No se pudo generar/compartir el PDF.");
-      alert("No pude generar/compartir el PDF.");
+      setTicketGenStatus("❌ No se pudo generar el PDF.");
+      setStatus("❌ No se pudo generar el ticket.");
+      alert("No pude generar el ticket.");
     } finally {
       setLoading(false);
     }
   }
 
+  // =====================
+  // RAWBT (texto)
+  // =====================
   async function copiarTicketTexto() {
     const text = buildTicketText({ pedido, renglones });
     await copyTicketToClipboard(text);
@@ -776,7 +858,7 @@ export default function OrdenEnCursoP2() {
           background: var(--amberBg);
         }
 
-        /* ✅ botón regresar P2 -> P1 (visible, serio, no peligro) */
+        /* ✅ botón regresar P2 -> P1 */
         .btnBackP1{
           border:2px solid var(--amberBorder);
           background: rgba(255,209,102,0.10);
@@ -904,12 +986,115 @@ export default function OrdenEnCursoP2() {
           opacity: 0.95;
         }
 
+        /* ===== Modal Ticket ===== */
+        .modalOverlay{
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.65);
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding: 14px;
+          z-index: 9999;
+        }
+        .modalCard{
+          width: min(820px, 100%);
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(12,15,20,0.96);
+          overflow:hidden;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+        }
+        .modalTop{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          padding: 12px 12px;
+          border-bottom: 1px solid rgba(255,255,255,0.10);
+          background: rgba(255,255,255,0.03);
+        }
+        .modalTitle{
+          font-weight: 950;
+          letter-spacing: .3px;
+          font-size: 14px;
+          overflow-wrap:anywhere;
+        }
+        .modalBtns{
+          display:flex;
+          gap:10px;
+          flex-wrap:wrap;
+        }
+        .modalBody{
+          padding: 14px 12px;
+        }
+        .modalHint{
+          opacity:.82;
+          font-size: 13px;
+          line-height: 1.35;
+        }
+
         @media (max-width:560px){
           .actions{ flex-direction:column; }
           .actions .btn{ width:100%; flex:1 1 auto; }
           .tomaRow{ grid-template-columns: 1fr; }
+          .modalBtns{ width:100%; }
+          .modalBtns .btn{ width:100%; }
         }
       `}</style>
+
+      {/* ✅ MODAL TICKET (SIN VISTA PREVIA) */}
+      {ticketModalOpen && (
+        <div className="modalOverlay" onClick={closeTicketModal}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div className="modalTop">
+              <div className="modalTitle">
+                Ticket · {pedidoId || "—"}{" "}
+                {ticketGenStatus ? `· ${ticketGenStatus}` : ""}
+              </div>
+              <div className="modalBtns">
+                <button
+                  className="btn btnAmber"
+                  onClick={openTicketInNewTabSafe}
+                  disabled={!pedido}
+                  title="Abre el PDF en otra pestaña para imprimir"
+                >
+                  🖨️ Abrir / Imprimir
+                </button>
+                <button
+                  className="btn btnGhost"
+                  onClick={downloadTicketPdf}
+                  disabled={!pedido}
+                >
+                  ⬇️ Descargar
+                </button>
+                <button className="btn btnDanger" onClick={closeTicketModal}>
+                  ✖ Cerrar
+                </button>
+              </div>
+            </div>
+            <div className="modalBody">
+              <div className="modalHint">
+                ⚠️ En CodeSandbox/Chrome a veces se bloquea la vista previa del
+                PDF dentro del modal por el iframe. Por eso aquí solo lo{" "}
+                <b>abrimos en otra pestaña</b> o lo <b>descargamos</b>.
+                <br />
+                {ticketBlobUrl ? (
+                  <>
+                    <br />✅ Ya está generado. Si te bloquea la pestaña: activa
+                    pop-ups para esta página.
+                  </>
+                ) : (
+                  <>
+                    <br />
+                    {ticketGenStatus || "Generando…"}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modo === "LISTA" && (
         <>
@@ -1099,14 +1284,16 @@ export default function OrdenEnCursoP2() {
                 💬 Nota virtual (mensaje)
               </button>
 
+              {/* ✅ ESTE ES EL BUENO PARA COMPU: abre modal y te deja imprimir/descargar */}
               <button
                 className="btn btnAmber"
-                onClick={enviarPdfWhatsApp}
+                onClick={imprimirTicketEnCompu}
                 disabled={loading || !pedido}
               >
                 🖨️ IMPRIMIR TICKET
               </button>
 
+              {/* ✅ RAWBT (texto) */}
               <button
                 className="btn btnGhost"
                 onClick={copiarTicketTexto}

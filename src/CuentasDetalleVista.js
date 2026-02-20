@@ -55,7 +55,6 @@ export default function CuentasDetalleVista({ dia, onBack }) {
     setLoading(true);
     setErr("");
     try {
-      // ✅ RANGO POR FECHA (arregla el “día con ingreso pero vacío” por TZ)
       const start = `${dia}T00:00:00`;
       const endD = new Date(`${dia}T00:00:00`);
       endD.setDate(endD.getDate() + 1);
@@ -97,19 +96,20 @@ export default function CuentasDetalleVista({ dia, onBack }) {
     return { entradas, salidas, neto };
   }, [rows]);
 
-  // ✅ cajaNum seguro
   const cajaNum = useMemo(() => {
     const x = Number(caja || 0);
     return isFinite(x) ? x : 0;
   }, [caja]);
 
-  // ✅ A RETIRAR = NETO - CAJA
   const aRetirar = useMemo(() => {
     const x = Number(resumen.neto || 0) - cajaNum;
     return isFinite(x) ? x : 0;
   }, [resumen.neto, cajaNum]);
 
   const onPrint = async () => {
+    // ✅ CLAVE: abre pestaña INMEDIATO (sin await) para evitar bloqueos
+    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+
     try {
       setPrinting(true);
       await imprimirTicketCorte({
@@ -119,10 +119,14 @@ export default function CuentasDetalleVista({ dia, onBack }) {
         neto: resumen.neto,
         caja: cajaNum,
         aRetirar,
-        logoSrc: logoCuadro, // ✅ mantengo tu logo para el ticket
+        logoSrc: logoCuadro,
+        targetWindow: w, // ✅ pasa la pestaña pre-abierta
       });
     } catch (e) {
       window.alert(e?.message || "No se pudo imprimir el ticket");
+      try {
+        if (w && !w.closed) w.close();
+      } catch {}
     } finally {
       setPrinting(false);
     }
@@ -182,7 +186,6 @@ export default function CuentasDetalleVista({ dia, onBack }) {
             <div style={S.kpiValStrong}>{money(resumen.neto)}</div>
           </div>
 
-          {/* ✅ NUEVO KPI: CAJA editable */}
           <div style={S.kpi}>
             <div style={S.kpiLabel}>CAJA</div>
             <input
@@ -195,7 +198,6 @@ export default function CuentasDetalleVista({ dia, onBack }) {
             <div style={S.kpiHint}>Se queda para cambio</div>
           </div>
 
-          {/* ✅ NUEVO KPI: A RETIRAR */}
           <div style={{ ...S.kpi, gridColumn: "1 / -1" }}>
             <div style={S.kpiLabel}>A RETIRAR (NETO - CAJA)</div>
             <div style={S.kpiValStrong}>{money(aRetirar)}</div>

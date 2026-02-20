@@ -72,7 +72,7 @@ export default function TomaPedidos() {
   // Especial manual
   const [isManual, setIsManual] = useState(false);
   const [manualDesc, setManualDesc] = useState("Credencial 2.5x3.5");
-  const [manualPrecio, setManualPrecio] = useState(75);
+  const [manualPrecio, setManualPrecio] = useState(75); // ✅ precio del PAQUETE (total del renglón)
   const [manualCantidad, setManualCantidad] = useState(1);
 
   // --- Carrito ---
@@ -415,9 +415,10 @@ export default function TomaPedidos() {
         : String(Date.now()) + "_" + String(Math.random());
 
     if (isManual) {
-      const pu = Number(manualPrecio || 0);
-      const qty = Number(manualCantidad || 1);
-      const subtotal = pu * qty;
+      // ✅ ESPECIAL: PRECIO ES POR PAQUETE (TOTAL DEL RENGLÓN)
+      const pu = Number(manualPrecio || 0); // paquete
+      const qty = Number(manualCantidad || 1); // se conserva para describir / imprimir / control
+      const subtotal = pu; // ✅ NO MULTIPLICAR
 
       const item = {
         localId: updating ? editingLocalId : newId(),
@@ -432,8 +433,8 @@ export default function TomaPedidos() {
         especificaciones: `${fEspecificaciones.trim()}${
           fEspecificaciones.trim() ? " | " : ""
         }MANUAL`,
-        precio_unitario: pu,
-        subtotal,
+        precio_unitario: pu, // se guarda igual (paquete) para no perderlo
+        subtotal, // ✅ total del renglón
       };
 
       if (updating) {
@@ -505,7 +506,8 @@ export default function TomaPedidos() {
       const desc = (it.tamano || "").toString().replace(/^ESPECIAL:\s*/i, "");
       setManualDesc(desc || "Especial");
       setManualCantidad(Number(it.cantidad || 1));
-      setManualPrecio(Number(it.precio_unitario || 0));
+      // ✅ en manual guardamos paquete en precio_unitario (y subtotal igual)
+      setManualPrecio(Number(it.precio_unitario || it.subtotal || 0));
       setFKenfor(Boolean(it.kenfor || it.papel === "KENFOR"));
       setFUrgente(Boolean(it.urgente));
       setFRopa(it.ropa || "");
@@ -569,6 +571,7 @@ export default function TomaPedidos() {
   }, [pagoMonto, efectivoRecibido]);
 
   const precioRenglon = useMemo(() => {
+    // ✅ en manual mostramos el precio del paquete
     if (isManual) return Number(manualPrecio || 0);
     const p = calcLinePrice({
       tamano: fTamano,
@@ -1277,16 +1280,6 @@ export default function TomaPedidos() {
           display:flex; align-items:center; gap:10px;
           min-width:0;
         }
-        .logoDot{
-          width:38px; height:38px; border-radius:999px;
-          background:
-            radial-gradient(16px 16px at 35% 30%, rgba(255,255,255,0.20), transparent 60%),
-            linear-gradient(180deg, rgba(111,128,148,0.35), rgba(111,128,148,0.12));
-          border: 1px solid rgba(111,128,148,0.55);
-          box-shadow: 0 10px 22px rgba(0,0,0,0.45);
-          display:flex; align-items:center; justify-content:center;
-          flex: 0 0 auto;
-        }
 
         /* 🖼 Logo real Foto Ramírez (SIN FONDO) */
         .logoBox{
@@ -1309,15 +1302,7 @@ export default function TomaPedidos() {
           object-fit: contain;
           display:block;
         }
-        
-        .logoDot span{
-          font-weight: 950;
-          letter-spacing: 0.5px;
-          font-size: 12px;
-          color: rgba(244,246,250,0.92);
-          text-shadow: 0 2px 8px rgba(0,0,0,0.55);
-          user-select:none;
-        }
+
         .brandTitle{
           font-weight: 980;
           font-size: 14px;
@@ -2281,7 +2266,6 @@ export default function TomaPedidos() {
                           </div>
                         </div>
 
-                        {/* ✅ FIX: aquí NO existe it. En incompletos es Retomar/Eliminar pedido */}
                         <div className="itemActions">
                           <button
                             type="button"
@@ -2308,12 +2292,9 @@ export default function TomaPedidos() {
           </>
         )}
 
-        {/* ====== STEPS 1..4: tu UI actual (sin cambios por ahora) ====== */}
-
         {/* STEP 1 */}
         {step === 1 && (
           <div>
-            {/* ===== Presupuesto ===== */}
             <div className="card cardSlate">
               <div className="cardTitle">Presupuesto</div>
               <div className="mut">Arma un renglón y agrégalo al carrito.</div>
@@ -2462,7 +2443,7 @@ export default function TomaPedidos() {
                         />
                       </div>
                       <div>
-                        <div className="label">Precio unitario</div>
+                        <div className="label">Precio del paquete</div>
                         <input
                           className="input"
                           value={manualPrecio}

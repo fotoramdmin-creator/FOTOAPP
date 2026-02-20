@@ -1,5 +1,5 @@
 // src/ticketCortePdf.js
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import defaultLogo from "./assets/logo.png";
 
 // ========= Helpers =========
@@ -38,7 +38,7 @@ const loadImageInfo = (src) =>
   });
 
 const imageToDataURL = async (src) => {
-  const res = await fetch(src);
+  const res = await fetch(src, { cache: "no-store" });
   const blob = await res.blob();
   return await new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -48,18 +48,32 @@ const imageToDataURL = async (src) => {
   });
 };
 
-const safeWindowOpenBlob = (blob, filename = "corte.pdf") => {
+const triggerDownload = (blob, filename) => {
   const url = URL.createObjectURL(blob);
-  const w = window.open(url, "_blank");
-  if (!w) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return url; // por si se quiere abrir también
+};
+
+const openOrNavigateWindow = (url, win) => {
+  try {
+    if (win && !win.closed) {
+      win.location.href = url;
+      return true;
+    }
+  } catch {}
+  try {
+    const w2 = window.open(url, "_blank", "noopener,noreferrer");
+    return !!w2;
+  } catch {
+    return false;
+  }
 };
 
 // ========= Layout =========
@@ -67,7 +81,6 @@ function buildLayout(
   { dia, entradas, ingresos, salidas, neto, caja, aRetirar },
   doc
 ) {
-  // ✅ 58mm
   const PAGE_W = 58;
   const M = 4;
   const contentW = PAGE_W - M * 2;
@@ -80,16 +93,10 @@ function buildLayout(
   const GAP_SM = 2.0;
   const GAP_MD = 3.0;
 
-  // ✅ separación para HR
   const HR_PAD_TOP = 3.2;
   const HR_PAD_BOT = 4.2;
   const HR_AFTER_JUMP = 1.4;
 
-  // ✅ Logo (proporcional)
-  const LOGO_MAX_W = 44;
-  const LOGO_MAX_H = 20;
-
-  // Normaliza entradas/ingresos
   const ent = Number(
     ingresos !== undefined && ingresos !== null ? ingresos : entradas
   );
@@ -126,7 +133,6 @@ function buildLayout(
 
   doc.setFontSize(BODY_SIZE);
 
-  // ✅ filas incluyendo CAJA y A RETIRAR
   const rows = [
     ["Entradas", fmtMoney(entSafe)],
     ["Salidas", fmtMoney(salSafe)],
@@ -148,8 +154,6 @@ function buildLayout(
     HR_PAD_TOP,
     HR_PAD_BOT,
     HR_AFTER_JUMP,
-    LOGO_MAX_W,
-    LOGO_MAX_H,
     titleLines,
     diaLines: diaLabel ? diaLines : [],
     rows,
@@ -180,17 +184,13 @@ function computeNeededHeight(layout, logoDimsMm) {
   if (diaLines.length) h += diaLines.length * (LH - 0.6) + GAP_MD;
   else h += GAP_SM;
 
-  // HR + salto
   h += HR_PAD_TOP + 0.4 + HR_PAD_BOT + HR_AFTER_JUMP;
 
-  // filas
   h += rows.length * (LH + 0.8);
 
-  // HR footer + salto
   h += GAP_MD;
   h += HR_PAD_TOP + 0.4 + HR_PAD_BOT + HR_AFTER_JUMP;
 
-  // footer
   h += (LH - 0.8) * 2;
 
   h += M;
@@ -233,14 +233,12 @@ function drawTicket(doc, layout, logoDataUrl, logoDimsMm) {
 
   let y = M;
 
-  // Logo centrado
   if (logoDataUrl && logoDimsMm?.w && logoDimsMm?.h) {
     const x = (PAGE_W - logoDimsMm.w) / 2;
     doc.addImage(logoDataUrl, "PNG", x, y, logoDimsMm.w, logoDimsMm.h);
     y += logoDimsMm.h + GAP_MD;
   }
 
-  // Título
   doc.setFont("helvetica", "bold");
   doc.setFontSize(TITLE_SIZE);
   titleLines.forEach((line) => {
@@ -250,7 +248,6 @@ function drawTicket(doc, layout, logoDataUrl, logoDimsMm) {
   });
   y += GAP_SM;
 
-  // Día
   if (diaLines.length) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(SMALL_SIZE);
@@ -261,17 +258,14 @@ function drawTicket(doc, layout, logoDataUrl, logoDimsMm) {
     y += GAP_MD;
   }
 
-  // HR con padding + salto extra
   y += HR_PAD_TOP;
   hr(doc, M, PAGE_W - M, y);
   y += HR_PAD_BOT + HR_AFTER_JUMP;
 
-  // Filas
   const valueRightX = PAGE_W - M;
   const valuePadding = 2.0;
 
   rows.forEach(([label, value], idx) => {
-    // ✅ resalta la última fila: "A retirar"
     const isStrong = idx === rows.length - 1;
 
     doc.setFont("helvetica", isStrong ? "bold" : "normal");
@@ -294,13 +288,11 @@ function drawTicket(doc, layout, logoDataUrl, logoDimsMm) {
     y += LH + 0.8;
   });
 
-  // HR footer con padding + salto extra
   y += GAP_MD;
   y += HR_PAD_TOP;
   hr(doc, M, PAGE_W - M, y);
   y += HR_PAD_BOT + HR_AFTER_JUMP;
 
-  // Footer
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.2);
 
@@ -316,7 +308,7 @@ function drawTicket(doc, layout, logoDataUrl, logoDimsMm) {
 }
 
 // ========= Public API =========
-// ✅ Acepta entradas o ingresos, y acepta logoSrc (opcional)
+// ✅ PASA targetWindow si abriste la pestaña antes (para evitar bloqueos)
 export async function imprimirTicketCorte({
   dia,
   entradas,
@@ -326,12 +318,13 @@ export async function imprimirTicketCorte({
   caja = 0,
   aRetirar,
   logoSrc,
+  targetWindow, // ✅ NUEVO
 }) {
   try {
     let logoDataUrl = null;
     let logoDimsMm = null;
 
-    const chosenLogo = defaultLogo; // ✅ siempre BYN (logo.png)
+    const chosenLogo = logoSrc || defaultLogo;
 
     try {
       const [info, dataUrl] = await Promise.all([
@@ -378,33 +371,43 @@ export async function imprimirTicketCorte({
     drawTicket(doc, layoutFinal, logoDataUrl, logoDimsMm);
 
     const blob = doc.output("blob");
-    const file = new File([blob], "corte-caja.pdf", {
-      type: "application/pdf",
-    });
+    const filename = "corte-caja.pdf";
 
-    const canShareFiles =
-      !!navigator.share &&
-      !!navigator.canShare &&
-      (() => {
-        try {
-          return navigator.canShare({ files: [file] });
-        } catch {
-          return false;
-        }
-      })();
+    // ✅ 1) Descarga forzada SIEMPRE
+    const blobUrl = triggerDownload(blob, filename);
 
-    if (canShareFiles) {
-      await navigator.share({
-        files: [file],
-        title: "Corte de caja",
-        text: "Ticket de corte de caja",
-      });
-      return;
+    // ✅ 2) Si abriste pestaña antes, la navega (esto sí pasa bloqueos)
+    openOrNavigateWindow(blobUrl, targetWindow);
+
+    // ✅ 3) Share (si existe) como extra (no estorba)
+    try {
+      const file = new File([blob], filename, { type: "application/pdf" });
+      const canShareFiles =
+        !!navigator.share &&
+        !!navigator.canShare &&
+        (() => {
+          try {
+            return navigator.canShare({ files: [file] });
+          } catch {
+            return false;
+          }
+        })();
+
+      if (canShareFiles) {
+        await navigator.share({
+          files: [file],
+          title: "Corte de caja",
+          text: "Ticket de corte de caja",
+        });
+      }
+    } catch {
+      // no pasa nada
     }
-
-    safeWindowOpenBlob(blob, "corte-caja.pdf");
   } catch (err) {
-    console.error("Error al generar/compartir ticket de corte:", err);
+    console.error("Error al generar ticket de corte:", err);
     alert("No se pudo generar el ticket. Revisa consola para ver el error.");
+    try {
+      if (targetWindow && !targetWindow.closed) targetWindow.close();
+    } catch {}
   }
 }
