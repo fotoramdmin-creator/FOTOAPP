@@ -52,7 +52,7 @@ export default function CuentasDetalleVista({ dia, onBack }) {
   const [err, setErr] = useState("");
 
   // ✅ Caja para cambio (se queda en caja)
-  const [caja, setCaja] = useState("400");
+  const [caja, setCaja] = useState("0");
 
   // ==========================
   // ✅ MODAL TICKET estilo Orden en Curso
