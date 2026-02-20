@@ -57,8 +57,6 @@ export default function Menu({ setVista, session }) {
       if (eOrden) throw eOrden;
 
       // 2) P3: PRODUCCIÓN
-      // Usamos produccion_resumen porque ES lo que ya tienes (dashboard).
-      // Pero lo leemos "agnóstico" a columnas para no fallar.
       const { data: p3Rows, error: eP3 } = await supabase
         .from("produccion_resumen")
         .select("*")
@@ -78,14 +76,9 @@ export default function Menu({ setVista, session }) {
           pick(r, ["total", "count", "cantidad", "n", "pendientes"])
         );
 
-        // Si tu resumen viene por filas tipo:
-        // { categoria: 'URGENTE', total: 1 }
-        // { categoria: 'HOY', total: 1 }
         if (cat === "URGENTE") urg += total;
         if (cat === "HOY") hoy += total;
 
-        // Si tu resumen NO viene así y trae flags por registro:
-        // sumamos 1 por fila (fallback)
         if (total === 0) {
           const isUrg =
             r?.urgente === true ||
@@ -112,7 +105,6 @@ export default function Menu({ setVista, session }) {
       if (msg !== lastErrRef.current) console.error("Menu badges error:", e);
       lastErrRef.current = msg;
 
-      // NO rompas la UI
       setOrdenCount(0);
       setP3UrgCount(0);
       setP3HoyCount(0);
@@ -352,15 +344,20 @@ export default function Menu({ setVista, session }) {
         {items.map((it) => {
           const isLogout = it.key === "__logout__";
           const isRetiros = it.key === "retiro";
+          const isCuentas = it.key === "cuentas";
 
           return (
             <button
               key={it.key}
               onClick={() => (isLogout ? logout() : setVista(it.key))}
               style={{
+                // ✅ SOLO CUENTAS: VERDE (al revés)
                 background: isLogout
                   ? "rgba(255,255,255,0.06)"
+                  : isCuentas
+                  ? "linear-gradient(180deg, rgba(43,255,136,0.26) 0%, rgba(43,255,136,0.14) 100%)"
                   : "linear-gradient(180deg, #fff7e6 0%, #f3ead6 100%)",
+
                 borderRadius: 33,
                 padding: 18,
                 minHeight: 120,
@@ -368,12 +365,20 @@ export default function Menu({ setVista, session }) {
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
+
+                // ✅ borde CUENTAS verde
                 border: isLogout
                   ? "1px solid rgba(245,241,232,0.18)"
+                  : isCuentas
+                  ? "1px solid rgba(43,255,136,0.40)"
                   : "1px solid rgba(0,0,0,0.12)",
+
                 boxShadow: "0 8px 18px rgba(0,0,0,0.35)",
                 cursor: "pointer",
-                color: isLogout ? "#f5f1e8" : "#2a2a2a",
+
+                // ✅ texto CUENTAS en crema (para contraste)
+                color: isLogout ? "#f5f1e8" : isCuentas ? "#fff7e6" : "#2a2a2a",
+
                 position: "relative",
               }}
             >
@@ -387,8 +392,11 @@ export default function Menu({ setVista, session }) {
 
               <div
                 style={{
+                  // ✅ Icono CUENTAS en crema (al revés)
                   color: isLogout
                     ? "rgba(255,90,90,0.95)"
+                    : isCuentas
+                    ? "#fff7e6"
                     : isRetiros
                     ? "rgba(180,70,70,0.90)"
                     : "rgba(0,120,115,0.9)",
@@ -402,7 +410,12 @@ export default function Menu({ setVista, session }) {
                   fontSize: 19,
                   fontWeight: 800,
                   marginTop: 14,
-                  color: isLogout ? "#f5f1e8" : "#2a2a2a",
+                  // ✅ título CUENTAS en crema
+                  color: isLogout
+                    ? "#f5f1e8"
+                    : isCuentas
+                    ? "#fff7e6"
+                    : "#2a2a2a",
                   letterSpacing: 0.4,
                 }}
               >
